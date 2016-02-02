@@ -37,7 +37,7 @@ namespace LibLogitechLCD.Test
 		/// MUST throw an Exception.
 		/// </summary>
 		[TestMethod]
-		[ExpectedException(typeof(InvalidOperationException))]
+		[ExpectedException(typeof(InitializationException))]
 		public void TestAPIDoubleInit()
 		{
 			//Ensure the API is not initialized when we begin
@@ -63,14 +63,14 @@ namespace LibLogitechLCD.Test
 		/// MUST throw an exception
 		/// </summary>
 		[TestMethod]
-		[ExpectedException(typeof(InvalidOperationException))]
+		[ExpectedException(typeof(InitializationException))]
 		public void TestAPIDeInitBeforeInit()
 		{
 			//Ensure the API is not initialized when we begin
 			Assert.IsFalse(API.IsInitialized);
 			
 			//Deinitialize the API
-			//This MUSt throw an exeption
+			//This MUST throw an exeption
 			API.DeInitialize();
 
 			//This must never be called. Unit test fails if so.
@@ -96,23 +96,22 @@ namespace LibLogitechLCD.Test
 			Connection connection = Connection.Connect("Unit Test");
 			
 			//Ensure the connection was successful and the handle is valid
-			Assert.IsTrue(connection.IsConnected);
-			Assert.IsTrue(connection.ConnectionHandle > 0);
+			Assert.AreNotEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Write the handle to the debug log
 			Debug.WriteLine("Handler: " + connection.ConnectionHandle);
 
 			//Ensure that the API has exactly one connection - which we just created before
-			Assert.AreEqual<int>(1, API.connections.Count);
+			Assert.AreEqual<int>(1, API.Connections.Count);
 
 			//Disconnect from the API
 			connection.Disconnect();
 
 			//Ensure that the disconnect was successful and that the connection knows it's not connected anymore.
-			Assert.IsFalse(connection.IsConnected);
+			Assert.AreEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Ensure that the connection has been removed from the API's connection pool
-			Assert.AreEqual<int>(0, API.connections.Count);
+			Assert.AreEqual<int>(0, API.Connections.Count);
 
 			//Deinitialize the API after every connection has been removed
 			API.DeInitialize();
@@ -127,7 +126,7 @@ namespace LibLogitechLCD.Test
 		/// MUST throw an Exeption
 		/// </summary>
 		[TestMethod]
-		[ExpectedException(typeof(InvalidOperationException))]
+		[ExpectedException(typeof(InitializationException))]
 		public void TestAPIConnectionBeforeInit()
 		{
 			//Ensure the API is not initialized when we begin
@@ -160,14 +159,13 @@ namespace LibLogitechLCD.Test
 			Connection connection = Connection.Connect("Unit Test");
 			
 			//Ensure the connection was successful and the handle is valid
-			Assert.IsTrue(connection.IsConnected);
-			Assert.IsTrue(connection.ConnectionHandle > 0);
+			Assert.AreNotEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Write the handle to the debug log
 			Debug.WriteLine("Handler: " + connection.ConnectionHandle);
 
 			//Ensure that the API has exactly one connection - which we just created before
-			Assert.AreEqual<int>(1, API.connections.Count);
+			Assert.AreEqual<int>(1, API.Connections.Count);
 
 			try
 			{
@@ -177,16 +175,16 @@ namespace LibLogitechLCD.Test
 				//This must never be called. Unit test fails if so.
 				Assert.Fail("API deinitialized with pending connection");
 			}
-			catch (InvalidOperationException)
+			catch (InitializationException)
 			{
 				//Disconnect from the API
 				connection.Disconnect();
 
 				//Ensure that the disconnect was successful and that the connection knows it's not connected anymore.
-				Assert.IsFalse(connection.IsConnected);
+				Assert.AreEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 				//Ensure that the connection has been removed from the API's connection pool
-				Assert.AreEqual<int>(0, API.connections.Count);
+				Assert.AreEqual<int>(0, API.Connections.Count);
 
 				//Deinitialize the API after every connection has been removed
 				API.DeInitialize();
@@ -215,25 +213,24 @@ namespace LibLogitechLCD.Test
 			Connection connection = Connection.Connect("Unit Test");
 
 			//Ensure the connection was successful and the handle is valid
-			Assert.IsTrue(connection.IsConnected);
-			Assert.IsTrue(connection.ConnectionHandle > 0);
+			Assert.AreNotEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Write the handle to the debug log
 			Debug.WriteLine("Handler: " + connection.ConnectionHandle);
 
 			//Ensure that the API has exactly one connection - which we just created before
-			Assert.AreEqual<int>(1, API.connections.Count);
+			Assert.AreEqual<int>(1, API.Connections.Count);
 
 			try
 			{
 				//Open a new Black/White keyboard
-				Keyboard keyboard = Keyboard.Open(connection, Keyboard.Type.BlackWhite);
+				Keyboard keyboard = Keyboard.Open(connection);
 				Debug.WriteLine("Keyboard: " + keyboard.DeviceHandle);
 
 				//Disconnect afterwards
 				keyboard.Close();
 			}
-			catch (InvalidOperationException)
+			catch (APIException)
 			{
 				Assert.Inconclusive("Opening a keyboard failed. This might be due to the user not having a G510 connected.");
 			}
@@ -243,10 +240,11 @@ namespace LibLogitechLCD.Test
 			connection.Disconnect();
 
 			//Ensure that the disconnect was successful and that the connection knows it's not connected anymore.
-			Assert.IsFalse(connection.IsConnected);
+			Assert.AreEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
+			Assert.IsNull(connection.Keyboard);
 
 			//Ensure that the connection has been removed from the API's connection pool
-			Assert.AreEqual<int>(0, API.connections.Count);
+			Assert.AreEqual<int>(0, API.Connections.Count);
 
 			//Deinitialize the API after every connection has been removed
 			API.DeInitialize();
@@ -275,20 +273,19 @@ namespace LibLogitechLCD.Test
 			Connection connection = Connection.Connect("Unit Test");
 
 			//Ensure the connection was successful and the handle is valid
-			Assert.IsTrue(connection.IsConnected);
-			Assert.IsTrue(connection.ConnectionHandle > 0);
+			Assert.AreNotEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Write the handle to the debug log
 			Debug.WriteLine("Handler: " + connection.ConnectionHandle);
 
 			//Ensure that the API has exactly one connection - which we just created before
-			Assert.AreEqual<int>(1, API.connections.Count);
+			Assert.AreEqual<int>(1, API.Connections.Count);
 
 
 			try
 			{
-				//Open a new Black/White keyboard
-				Keyboard keyboard = Keyboard.Open(connection, Keyboard.Type.BlackWhite);
+				//Open a new keyboard and attempt to detect the type
+				Keyboard keyboard = Keyboard.Open(connection);
 				Debug.WriteLine("Keyboard: " + keyboard.DeviceHandle);
 
 				//Create a new Bitmap the size of the Display
@@ -328,10 +325,10 @@ namespace LibLogitechLCD.Test
 			connection.Disconnect();
 
 			//Ensure that the disconnect was successful and that the connection knows it's not connected anymore.
-			Assert.IsFalse(connection.IsConnected);
+			Assert.AreEqual(Connection.InvalidConnectionHandle, connection.ConnectionHandle);
 
 			//Ensure that the connection has been removed from the API's connection pool
-			Assert.AreEqual<int>(0, API.connections.Count);
+			Assert.AreEqual<int>(0, API.Connections.Count);
 
 			//Deinitialize the API after every connection has been removed
 			API.DeInitialize();
@@ -353,13 +350,13 @@ namespace LibLogitechLCD.Test
 				Debug.WriteLine("Initialized after test end!");
 
 				//Get a static copy of all current connections
-				Connection[] connections = API.connections.ToArray();
+				Connection[] connections = API.Connections.ToArray();
 
 				//Clean up for each connection
 				foreach (Connection connection in connections)
 				{
 					//If the connection is still valid, clean it up
-					if (connection.IsConnected)
+					if (connection.ConnectionHandle != Connection.InvalidConnectionHandle)
 					{
 						//If the connection has an associated keyboard, close it
 						if (connection.Keyboard != null)

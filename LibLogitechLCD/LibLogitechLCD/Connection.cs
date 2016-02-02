@@ -8,13 +8,14 @@ namespace LibLogitechLCD
 	public class Connection
 	{
 		/// <summary>
+		/// Constant representation of an invalid connection handle
+		/// </summary>
+		public const int InvalidConnectionHandle = -1;
+
+		/// <summary>
 		/// The internal handle of the connection.
 		/// </summary>
 		public int ConnectionHandle { get; private set; }
-		/// <summary>
-		/// Determines whether or not the connection is still valid
-		/// </summary>
-		public bool IsConnected { get; private set; }
 
 		/// <summary>
 		/// Checks how many keyboards are open via this connection.
@@ -38,7 +39,7 @@ namespace LibLogitechLCD
 		{
 			if (!API.IsInitialized)
 			{
-				throw new InvalidOperationException("API not initialized");
+				throw new InitializationException("API not initialized");
 			}
 
 			int handle;
@@ -50,9 +51,15 @@ namespace LibLogitechLCD
 				? DMcLgLCD.LcdConnectEx(appFriendlyName, 0, 0)
 				//otherwise get the regular one
 				: DMcLgLCD.LcdConnect(appFriendlyName, 0, 0);
-			
-			Connection con = new Connection() { ConnectionHandle = handle, IsConnected = true, Keyboard = null };
-			API.connections.Add(con);
+
+			if (handle == Connection.InvalidConnectionHandle)
+			{
+				throw new APIException("Could not create connection to API");
+			}
+
+
+			Connection con = new Connection() { ConnectionHandle = handle };
+			API.Connections.Add(con);
 			return con;
 		}
 
@@ -65,26 +72,29 @@ namespace LibLogitechLCD
 		{
 			if (!API.IsInitialized)
 			{
-				throw new InvalidOperationException("API not initialized");
+				throw new InitializationException("API not initialized");
 			}
-			if (!this.IsConnected)
+			if (this.ConnectionHandle == Connection.InvalidConnectionHandle)
 			{
-				throw new InvalidOperationException("Connection invalid (likely already closed before)");
+				throw new APIException("Connection invalid (likely already closed before)");
 			}
 			if (this.Keyboard != null)
 			{
-				throw new InvalidOperationException("Attempting to close connection, but keyboards are still open");
+				throw new APIException("Attempting to close connection, but keyboards are still open");
 			}
 
 			uint result = DMcLgLCD.LcdDisconnect(this.ConnectionHandle);
-			if (result == DMcLgLCD.ERROR_SUCCESS)
+			if (result == API.SUCCESS)
 			{
-				this.IsConnected = false;
-				API.connections.Remove(this);
+				//Invalidate connection handle
+				this.ConnectionHandle = Connection.InvalidConnectionHandle;
+
+				//Remove the connection from the API connection pool
+				API.Connections.Remove(this);
 			}
 			else
 			{
-				throw new Exception("Error disconnecting from API. Error: " + result);
+				throw new APIException("Error occurred while disconnecting from API. See error code for details", result);
 			}
 		}
 	}

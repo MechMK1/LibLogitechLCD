@@ -8,6 +8,16 @@ namespace LibLogitechLCD
 	/// </summary>
 	public class Keyboard
 	{
+		public static readonly Color TransparentColor = Color.White;
+		public static readonly Color OpaqueColor = Color.Black;
+		public static readonly Brush TransparentBrush = Brushes.White;
+		public static readonly Brush OpaqueBrush = Brushes.Black;
+
+		/// <summary>
+		/// Constant representation of an invalid connection handle
+		/// </summary>
+		public const int InvalidDeviceHandle = -1;
+
 		/// <summary>
 		/// Size in pixels of a Black/White display
 		/// </summary>
@@ -34,25 +44,60 @@ namespace LibLogitechLCD
 		/// </summary>
 		public Type KeyboardType { get; private set; }
 
+		
+
 		/// <summary>
-		/// Opens a new keyboard from an existing API connection.
+		/// Opens a new keyboard from an existing API connection with the specified type.
+		/// </summary>
+		/// <<param name="connection">The connection to the API.</param>
+		/// <returns>An initialized Keyboard</returns>
+		public static Keyboard Open(Connection connection)
+		{
+			if (!API.IsInitialized)
+			{
+				throw new InitializationException("API not initialized");
+			}
+			if (connection == null || connection.ConnectionHandle == Connection.InvalidConnectionHandle)
+			{
+				throw new APIException("Connection invalid (likely already closed before)");
+			}
+			if (connection.Keyboard != null)
+			{
+				throw new APIException("Connection already has a keyboard associated");
+			}
+
+			Keyboard keyboard = Keyboard.Open(connection, Type.QVGA);
+			if (keyboard == null)
+			{
+				keyboard = Keyboard.Open(connection, Type.BlackWhite);
+				if (keyboard == null)
+				{
+					throw new APIException("API did not return a valid keyboard");
+				}
+			}
+
+			return keyboard;
+		}
+
+		/// <summary>
+		/// Opens a new keyboard from an existing API connection and attempts to autodetect the keyboard type.
 		/// </summary>
 		/// <param name="connection">The connection to the API.</param>
 		/// <param name="keyboardType">The type of the keyboard to open</param>
 		/// <returns>An initialized Keyboard</returns>
-		public static Keyboard Open(Connection connection, Keyboard.Type keyboardType)
+		private static Keyboard Open(Connection connection, Keyboard.Type keyboardType)
 		{
 			if (!API.IsInitialized)
 			{
-				throw new InvalidOperationException("API not initialized");
+				throw new InitializationException("API not initialized");
 			}
-			if (connection == null || !connection.IsConnected)
+			if (connection == null || connection.ConnectionHandle == Connection.InvalidConnectionHandle)
 			{
-				throw new InvalidOperationException("Connection invalid (likely already closed before)");
+				throw new APIException("Connection invalid (likely already closed before)");
 			}
 			if (connection.Keyboard != null)
 			{
-				throw new InvalidOperationException("Connection already has a keyboard associated");
+				throw new APIException("Connection already has a keyboard associated");
 			}
 
 			int tmp;
@@ -65,13 +110,13 @@ namespace LibLogitechLCD
 					tmp = DMcLgLCD.LcdOpenByType(connection.ConnectionHandle, (int)keyboardType);
 					break;
 				default:
-					throw new InvalidOperationException("Invalid device type");
+					throw new APIException("Invalid device type");
 			}
 
 			//Protip: Catch this error, since you might not be sure which keyboard your user has.
-			if (tmp < 0)
+			if (tmp == Keyboard.InvalidDeviceHandle)
 			{
-				throw new InvalidOperationException("API did not return a valid keyboard");
+				return null;
 			}
 
 			Keyboard k = new Keyboard() { DeviceHandle = tmp, Connection = connection, KeyboardType = keyboardType };
@@ -88,35 +133,66 @@ namespace LibLogitechLCD
 		{
 			if (!API.IsInitialized)
 			{
-				throw new InvalidOperationException("API not initialized");
+				throw new InitializationException("API not initialized");
 			}
-			if (this.Connection == null || !this.Connection.IsConnected)
+			if (this.Connection == null || this.Connection.ConnectionHandle == Connection.InvalidConnectionHandle)
 			{
-				throw new InvalidOperationException("Connection invalid (likely already closed before)");
+				throw new APIException("Connection invalid (likely already closed before)");
 			}
-			if (this.Connection.Keyboard == null)
+			if (this.Connection.Keyboard == null) //<-- Should actually point to "this". Just a safety measure in case of screwd up objects
 			{
-				throw new InvalidOperationException("Connection has no keyboard associated");
+				throw new APIException("Connection has no keyboard associated");
 			}
 
 			uint result = DMcLgLCD.LcdClose(this.DeviceHandle);
-			if (result != DMcLgLCD.ERROR_SUCCESS)
+			if (result != API.SUCCESS)
 			{
-				throw new InvalidOperationException("API returned error on disconnect. Error: " + result);
+				throw new APIException("API returned error on disconnect. See error code for details", result);
 			}
 
+			//Make the connection forget about our keyboard
 			this.Connection.Keyboard = null;
+			
+			//Make the keyboard forget about the connection
 			this.Connection = null;
-			this.DeviceHandle = 0;
+
+			//Invalidate device handle
+			this.DeviceHandle = Keyboard.InvalidDeviceHandle;
 		}
 
 		public void Draw(Bitmap bitmap)
 		{
 			if (!API.IsInitialized)
 			{
+				throw new InitializationException("API not initialized");
+			}
+			if (this.Connection == null || this.Connection.ConnectionHandle == Connection.InvalidConnectionHandle)
+			{
+				throw new APIException("Connection invalid (likely already closed before)");
+			}
+			if (this.DeviceHandle == Keyboard.InvalidDeviceHandle)
+			{
+				throw new APIException("Keyboard has invalid device handle");
+			}
+			if (bitmap == null)
+			{
+				throw new ArgumentNullException("bitmap", "Bitmap is null");
+			}
+			
+			uint result = DMcLgLCD.LcdUpdateBitmap(this.DeviceHandle, bitmap.GetHbitmap(), (int)this.KeyboardType);
+			if (result != API.SUCCESS)
+			{
+				throw new APIException("Error drawing on screen", result);
+			}
+		}
+
+		public void BringToFront()
+		{
+			if (!API.IsInitialized)
+			{
 				throw new InvalidOperationException("API not initialized");
 			}
-			if (this.Connection == null || !this.Connection.IsConnected)
+			if (this.Connection == null || this.Connection.ConnectionHandle == Connection.InvalidConnectionHandle)
 			{
 				throw new InvalidOperationException("Connection invalid (likely already closed before)");
 			}
@@ -124,12 +200,30 @@ namespace LibLogitechLCD
 			{
 				throw new InvalidOperationException("Connection has no keyboard associated");
 			}
-			if (bitmap == null)
+
+			uint result = DMcLgLCD.LcdSetAsLCDForegroundApp(this.DeviceHandle, DMcLgLCD.LGLCD_FORE_YES);
+			if (result != API.SUCCESS)
 			{
-				throw new ArgumentNullException("bitmap", "Bitmap is null");
+				throw new APIException("Error bringing applet to foreground", result);
 			}
-			
-			DMcLgLCD.LcdUpdateBitmap(this.DeviceHandle, bitmap.GetHbitmap(), (int)this.KeyboardType);
+		}
+
+		public Buttons ReadButtons()
+		{
+			if (!API.IsInitialized)
+			{
+				throw new InvalidOperationException("API not initialized");
+			}
+			if (this.Connection == null || this.Connection.ConnectionHandle == Connection.InvalidConnectionHandle)
+			{
+				throw new InvalidOperationException("Connection invalid (likely already closed before)");
+			}
+			if (this.Connection.Keyboard == null)
+			{
+				throw new InvalidOperationException("Connection has no keyboard associated");
+			}
+
+			return (Buttons)DMcLgLCD.LcdReadSoftButtons(this.DeviceHandle);
 		}
 
 		/// <summary>
@@ -141,6 +235,28 @@ namespace LibLogitechLCD
 		{
 			BlackWhite = 1,
 			QVGA = 2
+		}
+
+		[Flags]
+		public enum Buttons : uint
+		{
+			None = 0,
+
+			//Default G510 keys
+			Button1			= 0x0001,
+			Button2			= 0x0002,
+			Button3			= 0x0004,
+			Button4			= 0x0008,
+
+			//Extended G19 Keys
+			//Only work when Connection.Connect() was called with the extended parameter
+			Left	= 0x0100,
+			Right	= 0x0200,
+			OK		= 0x0400,
+			Cancel	= 0x0800,
+			Up		= 0x1000,
+			Down	= 0x2000,
+			Menu	= 0x4000
 		}
 	}
 }
